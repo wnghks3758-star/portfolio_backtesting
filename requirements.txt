@@ -6,4 +6,5 @@ pykrx
 scipy
 requests
 lxml
+setuptools
 
