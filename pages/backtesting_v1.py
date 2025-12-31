@@ -5,7 +5,7 @@ import numpy as np
 from datetime import date, timedelta
 import datetime
 from utils.util import *
-
+import FinanceDataReader as fdr  # <--- pykrx 대신 이거 사용
 
 
 # =========================
@@ -97,20 +97,41 @@ if start_date >= end_date:
     st.sidebar.error("시작일이 종료일보다 같거나 늦을 수 없습니다.")
     st.stop()
 
-# 기준 날짜 기준 ETF 리스트 가져오기
+# ==========================================
+# ETF 리스트 가져오기 (FinanceDataReader 사용)
+# ==========================================
 st.sidebar.subheader("ETF 선택")
 
-ref_date_str = yyyymmdd(end_date)
-ticker_list = stock.get_etf_ticker_list(ref_date_str)
+@st.cache_data(ttl=3600)  # 1시간마다 갱신 (속도 향상 및 차단 방지)
+def get_fdr_etf_list():
+    try:
+        # 'ETF/KR': 한국 ETF 전체 리스트 (네이버 금융 기반)
+        df = fdr.StockListing('ETF/KR')
+        
+        # 딕셔너리 형태로 변환 { "이름 (코드)": "코드" }
+        etf_dict = {}
+        for idx, row in df.iterrows():
+            code = row['Symbol']
+            name = row['Name']
+            label = f"{name} ({code})"
+            etf_dict[label] = code
+            
+        return etf_dict
+    except Exception as e:
+        # 혹시라도 실패하면 사용할 비상용 리스트 (Fallback)
+        return {
+            "TIGER 미국S&P500 (360750)": "360750",
+            "KODEX 200 (069500)": "069500",
+            "KODEX 국고채3년 (114260)": "114260",
+            "TIGER 미국나스닥100 (133690)": "133690",
+            "SOL 미국S&P500 (449170)": "449170"
+        }
 
-# {라벨: 티커} 매핑 생성
-label_to_ticker = {}
-for t in ticker_list:
-    name = stock.get_etf_ticker_name(t)
-    label = f"{name} ({t})"
-    label_to_ticker[label] = t
-
+# 리스트 로딩
+label_to_ticker = get_fdr_etf_list()
 labels_sorted = sorted(label_to_ticker.keys())
+
+
 
 # 🔹 포트폴리오 유형에 따라 기본 선택 ETF / 기본 비중 결정
 model_weights = {}
