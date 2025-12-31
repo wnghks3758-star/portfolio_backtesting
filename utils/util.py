@@ -5,6 +5,7 @@ import numpy as np
 from datetime import date, timedelta
 from scipy.optimize import minimize
 from typing import Dict
+import FinanceDataReader as fdr  # <--- pykrx 대신 이거 사용
 
 # ==== 추가: S&P500용 yfinance (선택) ====
 try:
@@ -70,30 +71,47 @@ def yyyymmdd(d: date) -> str:
     return d.strftime("%Y%m%d")
 
 
-def get_etf_price_df(tickers, start_date: date, end_date: date) -> pd.DataFrame:
+def get_etf_price_df(tickers, start_date, end_date) -> pd.DataFrame:
     """
-    여러 ETF의 종가를 하나의 DataFrame으로 합치기
+    FinanceDataReader를 사용하여 여러 ETF의 종가를 하나의 DataFrame으로 합치기
     index: 날짜
     columns: ticker
     """
-    start = yyyymmdd(start_date)
-    end = yyyymmdd(end_date)
-
     close_list = []
+    
     for t in tickers:
-        ohlcv = stock.get_etf_ohlcv_by_date(start, end, t)
-        if ohlcv.empty:
+        try:
+            # fdr.DataReader(종목코드, 시작일, 종료일)
+            # start_date, end_date는 datetime.date 객체나 문자열('YYYY-MM-DD') 모두 가능
+            df = fdr.DataReader(t, start_date, end_date)
+            
+            if df.empty:
+                continue
+            
+            # FDR의 종가 컬럼명은 'Close' 입니다. (pykrx는 '종가')
+            # 시리즈 이름을 티커(t)로 변경하여 리스트에 저장
+            close = df["Close"].rename(t)
+            close_list.append(close)
+            
+        except Exception as e:
+            # 특정 종목 데이터 수집 실패 시 로그 출력 후 건너뜀
+            print(f"Error fetching ticker {t}: {e}")
             continue
-        close = ohlcv["종가"].rename(t)
-        close_list.append(close)
 
     if not close_list:
         return pd.DataFrame()
 
+    # 데이터프레임 합치기
     prices = pd.concat(close_list, axis=1)
+    
+    # 인덱스를 Datetime 형식으로 확실하게 변환 및 정렬
     prices.index = pd.to_datetime(prices.index)
-    # 모든 ETF가 상장된 이후 구간만 사용 (NaN 제거)
+    prices = prices.sort_index()
+    
+    # 모든 ETF가 상장된 이후 구간만 사용 (NaN이 하나라도 있는 행 제거)
+    # 만약 데이터가 너무 많이 잘려나간다면 how="any"를 주석 처리하거나 조절 필요
     prices = prices.dropna(how="any")
+    
     return prices
 
 
@@ -508,3 +526,5 @@ MODEL_PORTFOLIOS = {
         "360750": 0.45,
     },
 }
+
+
